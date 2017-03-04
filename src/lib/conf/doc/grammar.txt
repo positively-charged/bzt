@@ -1,0 +1,40 @@
+Grammar
+=============================================================================
+
+unit:
+   <label> <unit>
+   <param> <unit>
+   E
+
+label:
+   [ <id> ]
+
+param:
+   <id> = <string>
+
+// These are taken care of by the scanner.
+
+id:
+   [a-zA-Z0-9_]+
+
+string:
+   " <char-seq> " <string-tail>
+
+string-tail:
+   <string>
+   E
+
+char-seq:
+   <char> <char-seq>
+   <escape-seq> <char-seq>
+   E
+
+char:
+   A byte with a value of 1 to 255.
+
+escape-seq:
+   \ <escape-char>
+
+escape-char:
+   "
+   \
