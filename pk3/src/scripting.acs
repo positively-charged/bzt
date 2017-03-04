@@ -1,0 +1,90 @@
+// Available ACS functions to plugins.
+#define kAcsPrintBold 0
+#define kAcsExecute 1
+#define kAcsDelay 2
+#define kAcsHudMessage 3
+#define kAcsSetFont 4
+
+int _acs_line[ 1024 ];
+
+function void Scp_AddSegment( void ) {
+   
+}
+
+script 630 ( void ) {
+   //suspend;
+
+   PtParcel_Open();
+
+   switch ( PtParcel_ReadNextInt() ) {
+      case kAcsPrintBold:
+         Acs_UnpackString();
+         printBold( a : _acs_line );
+         break;
+
+      case kAcsExecute:
+         acs_Execute(
+            PtParcel_ReadNextInt(),
+            PtParcel_ReadNextInt(),
+            PtParcel_ReadNextInt(),
+            PtParcel_ReadNextInt(),
+            PtParcel_ReadNextInt() );
+         break;
+
+      case kAcsDelay:
+         delay( PtParcel_ReadNextInt() );
+         break;
+
+      case kAcsHudMessage: {
+         int type = PtParcel_ReadNextInt();
+         int id = PtParcel_ReadNextInt();
+         int color = PtParcel_ReadNextInt();
+         int x = PtParcel_ReadNextInt();
+         int y = PtParcel_ReadNextInt();
+         int hold_time = PtParcel_ReadNextInt();
+
+         // Output message.
+         switch ( type & 0x7 ) {
+            case HUDMSG_PLAIN:
+               Acs_UnpackString();
+               hudMessage(
+                  a : _acs_line ;
+                  type, id, color, x, y, hold_time );
+               break;
+
+            case HUDMSG_FADEOUT: {
+               int fade_time = PtParcel_ReadNextInt();
+               Acs_UnpackString();
+               hudMessage(
+                  a : _acs_line ;
+                  type, id, color, x, y, hold_time, fade_time );
+               break;
+            }
+
+         }
+
+         break;
+      }
+
+      case kAcsSetFont: {
+         Acs_UnpackString();
+         str font = strparam( a : _acs_line );
+         setFont( font );
+         break;
+      }
+   }
+
+   //acs_Execute( 625, 0 );
+   //restart;
+}
+
+function void Acs_UnpackString( void ) {
+   int i = 0;
+
+   while ( PtParcel_HasData() ) {
+      _acs_line[ i ] = PtParcel_ReadNextByte();
+      ++i;
+   }
+
+   _acs_line[ i ] = 0;
+}

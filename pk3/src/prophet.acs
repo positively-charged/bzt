@@ -1,0 +1,184 @@
+// Prophet is the ACS component of Beast.
+//
+// Console variables used:
+//   bt_a -- Stores the action that Prophet should execute.
+//
+// Author: Positron
+
+#library "btpropht"
+#include "zcommon.acs"
+
+int _scr_args[ 3 ];
+
+#include "constants.acs"
+#include "client.acs"
+#include "parcel.acs"
+#include "messenger.acs"
+#include "scripting.acs"
+#include "vote.acs"
+#include "debug.acs"
+
+// The actions Prophet can perform on behalf of the bot.
+#define kActionNone 0
+// Displays information about this implementation.
+#define kActionIdentify 1
+// Sets the user display name when showing bot messages.
+#define kActionSetName 2
+// Sends messages to players.
+#define kActionMessage 3
+#define kActionAcs 4
+
+// Prophet is not loaded
+#define kStatusNone 0
+// Available for service.
+#define kStatusOpen 1
+// Serving the bot.
+
+int _pt_status;
+
+script 600 ( int option ) NET {
+   Msg_AddLine( "Vote cast", playerNumber() );
+}
+
+/*
+File: prophet.acs
+File: vote.acs
+Line: 3 */
+
+script 701 OPEN {
+   if ( Pt_GetStatus() == kStatusNone ) {
+      Pt_SetStatus( kStatusOpen );
+   }
+
+   // End.
+   acs_Execute( 625, 0 );
+   // Intermediaries.
+   //acs_Execute( 630, 0 );
+   acs_Execute( 618, 0 );
+   acs_Execute( 620, 0 );
+   delay( 1 );
+
+   // Start.
+   acs_Execute( 616, 0 );
+}
+
+// Execution beginning of script chain.
+script 616 ( void ) {
+   // Begin execution chain.
+   acs_Execute( 620, 0 );
+   suspend;
+   restart;
+}
+
+function void Pt_SetStatus( int status ) {
+   consoleCommand(
+      strparam( s : "set bt_status ", i : status ) );
+   _pt_status = status;
+}
+
+function int Pt_GetStatus( void ) {
+   return getCvar( "bt_status" );
+}
+
+function void Pt_ClientUpdate( int state, int num ) {
+   switch ( state ) {
+      case kClientStateJoin:
+         break;
+
+      case kClientStateQuit:
+         Msg_RemovePlayer( num );
+         break;
+   }
+}
+
+script 618 ( void ) {
+   suspend;
+
+   int action = getCvar( "bt_a" );
+   if ( action == kActionNone ) {
+      acs_Execute( 625, 0 );
+      restart;
+   }
+
+   int cabinetId = getCvar( "bt_cid" );
+
+   switch ( action ) {
+      // Provides information about this implementation of Prophet.
+      case kActionIdentify:
+         Pt_Tag( cabinetId );
+
+         // Storage.
+         log( 
+            s : "STORAGE: ",
+            s : "bt_d", s : " ",
+            i : 20, s : " " );
+         Msg_Identify();
+
+         Pt_Tag( cabinetId );
+         break;
+
+      case kActionSetName:
+         Msg_SetName();
+         log( s : "New name: ", a : _msg_bot_name );
+         break;
+
+      case kActionMessage:
+         Msg_AddParcelLine();
+         break;
+
+      case kActionEcho:
+         ProphetDoEcho();
+         break;
+
+      case kActionAcs:
+         acs_Execute( 630, 0 );
+         break;
+
+      default:
+         suspend;
+   }
+
+
+   consoleCommand( "set bt_a 0" );
+   consoleCommand( "set bt_cid 0" );
+
+   log( s : "BT OK" );
+
+   acs_Execute( 625, 0 );
+   restart;
+}
+
+script 610 OPEN CLIENTSIDE {
+   consoleCommand( "puke -611" );
+}
+
+script 611 ( void ) NET {
+   acs_ExecuteAlways( 613, 0 );
+}
+
+script 612 ( int player ) DISCONNECT CLIENTSIDE {
+   // Re-attach the handle to a spectating player.
+   if ( consolePlayerNumber() == player ) {
+      acs_Execute( 610, 0 );
+   }
+}
+
+script 613 ENTER {
+   Cl_AttachHandle();
+}
+
+script 614 RESPAWN {
+   acs_ExecuteAlways( 613, 0 );
+}
+
+// Adds a tag to the output so the bot can read the correct output.
+function void Pt_Tag( int qid ) {
+   log( s : "BT CBNT ", i : qid );
+}
+
+script 700 ( int a, int b, int c ) {
+   printBold(
+      s : "a : ", i : a, s : "\n",
+      s : "b : ", i : b, s : "\n",
+      s : "c : ", i : c );
+}

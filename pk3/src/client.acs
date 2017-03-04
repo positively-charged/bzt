@@ -1,0 +1,82 @@
+/*
+
+   Player handling.
+
+*/
+
+#define kHandleTidOffset 22616
+
+// Contains the TID made upon first connecting to the server.
+#define kClientPropRequest 0
+// Contains the TID used to reference a player in the system. This is the same
+// as the setup TID.
+#define kClientPropRegistered 1
+
+// Client registered with the system.
+#define kClientStateJoin 0
+// Client disconnected from the server.
+#define kClientStateQuit 1
+
+// Properties of clients.
+int _cl_prop[ kMaxPlayers ][ 2 ];
+// Number of clients.
+int _cl_count = 0;
+
+// Implements a single-threaded client join/disconnect system.
+script 620 ( void ) {
+   suspend;
+
+   for ( int num = 0; num < kMaxPlayers; ++num ) {
+      // Check registered clients.
+      if ( _cl_prop[ num ][ kClientPropRegistered ] ) {
+         // Client disconnected. Cleanup.
+         if ( ! playerIsSpectator( num ) && ! playerInGame( num ) ) {
+            Pt_ClientUpdate( kClientStateQuit, num );
+            _cl_prop[ num ][ kClientPropRequest ] = false;
+            _cl_prop[ num ][ kClientPropRegistered ] = false;
+            --_cl_count;
+         }
+      }
+      // Register new client.
+      else {
+         if ( _cl_prop[ num ][ kClientPropRequest ] ) {
+            _cl_prop[ num ][ kClientPropRegistered ] = true;
+            ++_cl_count;
+            Pt_ClientUpdate( kClientStateJoin, num );
+         }
+      }
+   }
+
+   acs_Execute( 618, 0 );
+   restart;
+}
+
+function int Cl_SetActivator( int num ) {
+   return setActivatorToTarget( kHandleTidOffset + num );
+}
+
+// Provides a reference to the player who activated the script.
+function void Cl_AttachHandle( void ) {
+   int tid = kHandleTidOffset + playerNumber();
+
+   // Spawn a new handle at the position of the player. The handle needs to
+   // be spawned at a valid position, so the position of the player is good.
+   // The handle object will not be removed when a player disconnects, but
+   // left to be reused by the next player with the same number.
+   if ( ! thingCount( T_NONE, tid ) ) {
+      spawn( "BeastHandle", getActorX( 0 ), getActorY( 0 ), getActorZ( 0 ),
+         tid, 0 );
+   }
+
+   thing_Hate( tid, 0, 0 );
+   _cl_prop[ playerNumber() ][ kClientPropRequest ] = true;
+}
+
+function int Cl_GetProp( int num, int prop ) {
+   return _cl_prop[ num ][ prop ];
+}
+
+// Returns the number of clients registered with the system.
+function int Cl_GetCount( void ) {
+   return _cl_count;
+}

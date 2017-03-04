@@ -1,0 +1,423 @@
+/*
+
+   Player messaging system.
+
+*/
+
+#define kMaxBotNameLength 12
+#define kLineBufferCapacity 64
+// Amount of time a line is visibile for, in seconds.
+#define kLineLifetime 6
+#define kMaxLineSize PT_PARCEL_DATA_CVAR_COUNT * CVAR_BYTE_COUNT
+#define kRecipientAll -1
+
+// Intended player of the line.
+#define kLinePropRecipient 0
+#define kLinePropRefCount 1
+
+// Number of lines in the lines buffer that belong to a player. 
+#define kViewPropCount 0
+// Number of lines on a player's screen.
+#define kViewPropActive 1
+// Start position in the view-buffer.
+#define kViewPropPos 2
+
+// Maximum number of lines that can be shown at one time.
+#define kViewSize 4
+// Line ID offset for the view.
+#define kViewLineidOffset 22616
+// Starting message offsets.
+#define kViewX -0.05
+#define kViewY 0.65
+
+#define kLineTypeNew 0
+#define kLineTypeShown 1
+#define kLineTypeFadeout 2
+
+// Display name for bot messages. Extra space is reserved for the NULL byte.
+int _msg_bot_name[ kMaxBotNameLength + 1 ] = {
+   'B', 'T', '>', ' ',
+};
+// A circular buffer containing the lines.
+int _msg_line[ kLineBufferCapacity ][ kMaxLineSize + 1 ];
+// A corresponding circular buffer containing the properties of the lines.
+int _msg_line_p[ kLineBufferCapacity ][ 2 ];
+// Number of lines currently in the lines buffer.
+int _msg_line_c = 0;
+// Position of the first line within the lines buffer.
+int _msg_pos = 0;
+
+// This circular buffer contains the lines currently displayed on a player's
+// screen. It holds the positions of lines found in the line-buffer. 
+int _msg_view[ kMaxPlayers ][ kViewSize ];
+// Contains the expiration times for the lines found in the view-buffer.
+int _msg_view_expt[ kMaxPlayers ][ kViewSize ];
+// View-buffer properties.
+// 0 -- Number of lines in the line-buffer that are associated with this
+//      view-buffer.
+// 1 -- Number of lines currently on screen.
+// 2 -- Current starting position of the view buffer.
+int _msg_view_p[ kMaxPlayers ][ 3 ];
+
+// Shows information about the Messenger.
+function void Msg_Identify( void ) {
+   log(
+      s : "MESSAGE: ",
+      i : kMaxBotNameLength
+   );
+}
+
+// Sets the display name of bot messages to the name found in the parcel.
+// The parcel should contain only the new name.
+function void Msg_SetName( void ) {
+   PtParcel_Open();
+   int length = 0;
+
+   while ( length < kMaxBotNameLength ) {
+      int byte = PtParcel_ReadNextByte();
+      if ( byte == VALUE_NONE ) {
+         break;
+      }
+
+      _msg_bot_name[ length ] = byte;
+      ++length;
+   }
+
+   // NULL byte.
+   _msg_bot_name[ length ] = 0;
+}
+
+// Adds a string line to the line-buffer.
+function void Msg_AddLine( str line, int recipient ) {
+   // Report error on full buffer.
+   if ( _msg_line_c >= kLineBufferCapacity ) {
+      log( s : "BT:Warning: Tried to add line to full queue" );
+      return;
+   }
+
+   int pos = Msg_OffsetPos( _msg_pos,
+      kLineBufferCapacity, _msg_line_c );
+
+   // Recipient.
+   _msg_line_p[ pos ][ kLinePropRecipient ] = recipient;
+
+   int length = strlen( line );
+   int i = 0;
+
+   while ( i < length && i < kMaxLineSize ) {
+      _msg_line[ pos ][ i ] = getChar( line, i );
+      ++i;
+   }
+
+   // NULL byte.
+   _msg_line[ pos ][ i ] = 0;
+   ++_msg_line_c;
+}
+
+// Queues a received message for displaying. 
+// Format of the parcel:
+//    (int) recipient 
+//    (str) message
+function void Msg_AddParcelLine( void ) {
+   if ( _msg_line_c >= kLineBufferCapacity ) {
+      log( s : "BT:Warning: Tried to add line to full queue" );
+      return;
+   }
+
+   PtParcel_Open();
+
+   int pos = Msg_OffsetPos( _msg_pos,
+      kLineBufferCapacity, _msg_line_c );
+
+   // Recipient.
+   int recipient = PtParcel_ReadNextInt();
+   _msg_line_p[ pos ][ kLinePropRecipient ] = recipient;
+
+   // Read line.
+   bool isDone = false;
+   int i = 0;
+
+   while ( ! isDone ) {
+      int c = PtParcel_ReadNextByte();
+      if ( c != VALUE_NONE ) {
+         _msg_line[ pos ][ i ] = c;
+         ++i;
+      }
+      else {
+         isDone = true;
+      }
+   }
+
+   _msg_line[ pos ][ i ] = 0;
+   ++_msg_line_c;
+}
+
+// Current.
+int _msg_cpos = 0;
+int _msg_clc = 0;
+
+// Displays lines to clients.
+script 625 ( void ) {
+   suspend;
+
+   int time = timer() / TICS_IN_SECOND;
+   if ( timer() % TICS_IN_SECOND != 0 ) {
+      acs_Execute( 616, 0 );
+      restart;
+   }
+
+   int i = 0;
+
+   // Update player view properties based on new lines.
+   while ( _msg_clc < _msg_line_c ) {
+      int recipient = _msg_line_p[ _msg_cpos ][ kLinePropRecipient ];
+
+      // Private line.
+      if ( recipient >= 0 ) {
+         if ( Cl_GetProp( recipient, kClientPropRegistered ) ) {
+            _msg_line_p[ _msg_cpos ][ kLinePropRefCount ] = 1;
+            _msg_view_p[ recipient ][ kViewPropCount ] += 1;
+         }
+         else {
+            _msg_line_p[ _msg_cpos ][ kLinePropRefCount ] = 0;
+         }
+      }
+      // Public line.
+      else {
+
+         // All valid players receive a public line.
+         _msg_line_p[ _msg_cpos ][ kLinePropRefCount ] = Cl_GetCount();
+
+         for ( i = 0; i < kMaxPlayers; ++i ) {
+            if ( Cl_GetProp( i, kClientPropRegistered ) ) {
+               ++_msg_view_p[ i ][ kViewPropCount ];
+            }
+         }
+      }
+
+      _msg_cpos = Msg_OffsetPos( _msg_cpos, kLineBufferCapacity, 1 );
+      ++_msg_clc;
+   }
+
+   // Remove expired lines.
+   i = 0;
+
+   while ( i < _msg_clc &&
+      _msg_line_p[ _msg_pos ][ kLinePropRefCount ] == 0 ) {
+      _msg_pos = Msg_OffsetPos( _msg_pos, kLineBufferCapacity, 1 );
+      --_msg_clc;
+      ++i;
+   }
+
+   // Notify the bot of empty space.
+   if ( _msg_clc < _msg_line_c && consolePlayerNumber() == -1 ) {
+      log( s : "BT MSG ", i : kLineBufferCapacity - _msg_clc );
+   }
+
+   _msg_line_c = _msg_clc;
+
+   // Display lines.
+   for ( i = 0; i < kMaxPlayers; ++i ) {
+      if ( _msg_view_p[ i ][ kViewPropCount ] ) {
+         Msg_ShowView( time, i );
+      }
+   }
+
+   acs_Execute( 616, 0 );
+   restart;
+}
+
+// Creates positions for navigating circular buffers.
+function int Msg_OffsetPos( int pos, int size, int offset ) {
+   return ( pos + offset ) % size;
+}
+
+function void Msg_ShowView( int time, int player ) {
+   // Buffer positions.
+   int lb_pos = _msg_pos;
+   int vb_pos = _msg_view_p[ player ][ kViewPropPos ];
+
+   int num_reshow = 0;
+   int nl_pos = -1;
+   // Move to the next line if:
+   // - The view is full and another line is available in the buffer.
+   //   This produces a scrolling effect.
+   // - A line expired. This moves each of the remaining lines one line
+   //   upwards, replacing the expired line.
+   bool new_line = false;
+   bool clear_line = false;
+
+   int count = _msg_view_p[ player ][ kViewPropCount ];
+   int active = _msg_view_p[ player ][ kViewPropActive ];
+
+   // Add new line.
+   if ( active < count ) {
+      // Find the new line in the line-buffer. Start searching from the last
+      // shown line, if one is present.
+      if ( active ) {
+         lb_pos = _msg_view[ player ][ 
+            Msg_OffsetPos( vb_pos, kViewSize, active - 1 ) ];
+         // Start from the next position.
+         lb_pos = Msg_OffsetPos( lb_pos, kLineBufferCapacity, 1 );
+      }
+
+      while ( true ) {
+         int recipient = _msg_line_p[ lb_pos ][ kLinePropRecipient ];
+         if ( recipient == player || recipient == -1 ) {
+            break;
+         }
+
+         lb_pos = Msg_OffsetPos( lb_pos, kLineBufferCapacity, 1 );
+      }
+
+      // Add found line to the view-buffer.
+
+      // If the view is currently full, remove the oldest line to make space
+      // for the new line.
+      if ( active == kViewSize ) {
+         vb_pos = Msg_RemoveLineFromView( player );
+         --active;
+         num_reshow = active;
+      }
+
+      nl_pos = Msg_OffsetPos( vb_pos, kViewSize, active );
+      _msg_view[ player ][ nl_pos ] = lb_pos;
+
+      _msg_view_expt[ player ][ nl_pos ] = time + kLineLifetime;
+      ++active;
+   }
+
+   // Remove expired line.
+   if ( _msg_view_expt[ player ][ vb_pos ] <= time ) {
+      vb_pos = Msg_RemoveLineFromView( player );
+      --active;
+      num_reshow = active;
+      clear_line = true;
+   }
+
+   _msg_view_p[ player ][ kViewPropActive ] = active;
+
+   // Output lines.
+
+   if ( active == 0 ) {
+      return;
+   }
+
+   Cl_SetActivator( player );
+
+   int pos = vb_pos;
+   int shown = 0;
+
+   // Fade out oldest line if it's near expiration.
+   if ( _msg_view_expt[ player ][ pos ] - 1 == time ) {
+      Msg_ShowLine( _msg_view[ player ][ pos ], shown, kLineTypeFadeout );
+      pos = Msg_OffsetPos( pos, kViewSize, 1 );
+      ++shown;
+   }
+
+   // Reshow previous lines.
+   while ( shown < num_reshow ) {
+      Msg_ShowLine( _msg_view[ player ][ pos ], shown, kLineTypeShown );
+      pos = Msg_OffsetPos( pos, kViewSize, 1 );
+      ++shown;
+   }
+
+   // Show new line.
+   if ( nl_pos != -1 ) {
+      Msg_ShowLine( _msg_view[ player ][ nl_pos ], active - 1, kLineTypeNew );
+   }
+
+   // Remove lowest line from the screen.
+   if ( clear_line ) {
+      hudMessage( 
+         s : "" ; 
+         HUDMSG_PLAIN, kViewLineidOffset + active, 0, 0, 0, 1.0 );
+   }
+}
+
+// Removes the oldest line from a players view-buffer, returning the new
+// starting position.
+function int Msg_RemoveLineFromView( int num ) {
+   int vb_pos = _msg_view_p[ num ][ kViewPropPos ];
+   int lb_pos = _msg_view[ num ][ vb_pos ];
+
+   --_msg_line_p[ lb_pos ][ kLinePropRefCount ];
+   --_msg_view_p[ num ][ kViewPropCount ];
+
+   // Move to next position.
+   vb_pos = Msg_OffsetPos( vb_pos, kViewSize, 1 );
+   _msg_view_p[ num ][ kViewPropPos ] = vb_pos;
+
+   return vb_pos;
+}
+
+// Outputs a line to the screen of a player.
+function void Msg_ShowLine( int pos, int num, int type ) {
+   int id = kViewLineidOffset + num;
+   int y = kViewY + ( 1000 * num );
+
+   // Private line.
+   int color = CR_TAN;
+   // Public line.
+   if ( _msg_line_p[ pos ][ kLinePropRecipient ] == kRecipientAll ) {
+      color = CR_BRICK;
+   }
+
+   switch ( type ) {
+      case kLineTypeNew:
+         setFont( "SMALLFONT" );
+         // Log line into user's console for future reference.
+         hudMessage(
+            s : "\cc", a : _msg_bot_name, s : "\c-",
+            a : _msg_line[ pos ] ;
+            HUDMSG_PLAIN | HUDMSG_LOG, id, color, kViewX, y, 0 );
+            localAmbientSound( "btnewmsg", 127 );
+         break;
+
+      case kLineTypeShown:
+         setFont( "SMALLFONT" );
+         hudMessage(
+            s : "\cc", a : _msg_bot_name, s : "\c-",
+            a : _msg_line[ pos ] ;
+            HUDMSG_PLAIN, id, color, kViewX, y, 0 );
+         break;
+
+      case kLineTypeFadeout:
+         setFont( "SMALLFONT" );
+         hudMessage(
+            s : "\cc", a : _msg_bot_name, s : "\c-",
+            a : _msg_line[ pos ] ;
+            HUDMSG_FADEOUT, id, color, kViewX, y, 0, 1.0 );
+         break;
+   }
+}
+
+// Cleans up after a player disconnects from the server. It removes references
+// of the player from the line-buffer.
+function void Msg_RemovePlayer( int num ) {
+   int pos = _msg_pos;
+
+   // Start from the oldest line that is still active.
+   if ( _msg_view_p[ num ][ kViewPropActive ] ) {
+      int vb_pos = _msg_view_p[ num ][ kViewPropPos ];
+      pos = _msg_view[ num ][ vb_pos ];
+   }
+
+   int lb_count = _msg_clc;
+
+   while ( lb_count ) {
+      if ( 
+         _msg_line_p[ pos ][ kLinePropRecipient ] == num ||
+         _msg_line_p[ pos ][ kLinePropRecipient ] == kRecipientAll ) {
+         --_msg_line_p[ pos ][ kLinePropRefCount ];
+      }
+
+      pos = Msg_OffsetPos( pos, kLineBufferCapacity, 1 );
+      --lb_count;
+   }
+
+   // Reset the view for the next client.
+   _msg_view_p[ num ][ kViewPropCount ] = 0;
+   _msg_view_p[ num ][ kViewPropActive ] = 0;
+   _msg_view_p[ num ][ kViewPropPos ] = 0;
+}

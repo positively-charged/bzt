@@ -1,0 +1,83 @@
+// Conducts polling.
+
+/*
+type Player {
+   int mNumber;
+   str mClass;
+}
+
+Player pl_db[ 32 ];
+
+int pl_db[ 32 ][ 2 ]; */
+
+/*
+unit Vote {
+   const int kMaxOptions = 10;
+   const int kMaxOptionLength = 25;
+
+   char mOptions[ kMaxOptions ][ kMaxOptionLength ];
+
+   function inline void populate( Parcel& parcel ) {
+      int option = 0;
+      int pos = 0;
+      while ( char ch = parcel.readByte() ) {
+         mOptions[ option ][ pos ] = ch;
+      }
+   }
+
+   function inline void commence( Messenger& messenger ) {
+      messenger.announce( "No majority received" );
+      messenger.announce( "Vote failed" );
+   }
+}
+
+Vote vote;
+
+script 1 open {
+   vote.commence( messenger );
+}
+ */
+script 650 ( void ) {
+   /*
+   unit a = {
+      int b;
+      int a;
+   }
+
+   a.a*/
+
+   consoleCommand( "doublebind 1 \"puke 600 1\"" );
+   consoleCommand( "doublebind 2 \"puke 600 2\"" );
+   consoleCommand( "doublebind 3 \"puke 600 3\"" );
+   consoleCommand( "doublebind 4 \"puke 600 4\"" );
+
+   // command.set( "sds" );
+   // command.execute();
+
+   setFont( "CONFONT" );
+
+   int time_left = 30;
+
+   while ( time_left >= 0 ) {
+      hudMessageBold(
+         s : "\cnVote (Press key twice or use keypad)\n\ccChoose a new map: \n\n1. MAP01 (\cn1\c-)\n2. MAP02 (\cn0\c-)\n3. MAP53 (\cn0\c-)\n4. MAP32 (\cn0\c-)\n\n5. Cancel\n\n\ccTime left: \cd", i : time_left ;
+         HUDMSG_PLAIN, 1, CR_WHITE, -0.05, 0.40, 0 );
+      --time_left;
+      delay( TICS_IN_SECOND );
+   }
+
+   hudMessageBold(
+   s : "" ;
+   HUDMSG_PLAIN, 1, CR_WHITE, -0.05, 0.40, 0 );
+
+   /*
+   hudMessageBold(
+   s : "\ccNo majority received.\n\ccVote failed" ;
+   HUDMSG_PLAIN, 1, CR_WHITE, -0.05, 0.40, 0 );
+*/
+
+   // messenger.
+
+   Msg_AddLine( "No majority received", -1 );
+   Msg_AddLine( "Vote failed", -1 );
+}

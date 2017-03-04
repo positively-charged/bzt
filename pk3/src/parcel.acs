@@ -1,0 +1,93 @@
+/*
+
+   Encapsulates the handling of the received data.
+
+*/
+
+#define PT_PARCEL_DATA_CVAR_COUNT 20
+#define PT_MAX_PARCEL_SIZE PT_PARCEL_DATA_CVAR_COUNT * CVAR_BYTE_COUNT
+
+// Console variables that store data received from the bot. The number 0
+// variable contains the size of the parcel; variable number 1 and onwards
+// contain the content of the parcel.
+str _pt_prcl_cvar[ PT_PARCEL_DATA_CVAR_COUNT ] = {
+   "bt_p1", "bt_p2", "bt_p3", "bt_p4", "bt_p5",       // 20 bytes
+   "bt_p6", "bt_p7", "bt_p8", "bt_p9", "bt_p10",      // 40
+   "bt_p11", "bt_p12", "bt_p13", "bt_p14", "bt_p15",  // 60
+   "bt_p16", "bt_p17", "bt_p18", "bt_p19", "bt_p20",  // 80
+};
+
+// Position within the parcel.
+int _pt_prcl_p = 0;
+// Parcel size in bytes.
+int _pt_prcl_s = 0;
+// Value of working console variable.
+int _pt_prcl_v = 0;
+
+global int 1:_mem_memory[];
+
+// Initializes the message for reading.
+function void PtParcel_Open( void ) {
+   _pt_prcl_s = getCvar( "bt_p0" );
+   // Truncate a parcel if it's too long.
+   if ( _pt_prcl_s > PT_MAX_PARCEL_SIZE ) {
+      // TODO: Move this error to the bot.
+      log( s : "BT:Warning: Received parcel overflown by ",
+         i : _pt_prcl_s - PT_MAX_PARCEL_SIZE, s : " bytes. ",
+         s : "Will truncate" );
+      _pt_prcl_s = PT_MAX_PARCEL_SIZE;
+   }
+
+   int i = 0;
+   int size = 0;
+
+   while ( size <= _pt_prcl_s ) {
+      _mem_memory[ i ] = getCvar( _pt_prcl_cvar[ i ] );
+      size += CVAR_BYTE_COUNT;
+      ++i;
+   }
+
+   _pt_prcl_p = 0;
+}
+
+function int PtParcel_GetSize( void ) {
+   return _pt_prcl_s;
+}
+
+function bool PtParcel_HasData( void ) {
+   return _pt_prcl_p < _pt_prcl_s;
+}
+
+// Retrieves the next character in the message, returning -1 when no more
+// characters are available.
+function int PtParcel_ReadNextByte( void ) {
+   int num = _pt_prcl_p / CVAR_BYTE_COUNT;
+   int offset = _pt_prcl_p % CVAR_BYTE_COUNT;
+   ++_pt_prcl_p;
+
+   // Extract the byte value.
+   return ( _mem_memory[ num ] >> ( offset * 8 ) ) & 0xFF;
+}
+
+function int PtParcel_ReadNextInt( void ) {
+   // No data.
+   if ( _pt_prcl_p >= _pt_prcl_s ) {
+      return VALUE_NONE;
+   }
+
+   int value = 0;
+   int i = 0;
+
+   while ( i < CVAR_BYTE_COUNT ) {
+      if ( ! PtParcel_HasData() ) {
+         break;
+      }
+
+      int byte = PtParcel_ReadNextByte();
+      value <<= 8;
+      value |= byte;
+      ++i;
+   }
+
+   return value;
+}

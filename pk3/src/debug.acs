@@ -1,0 +1,80 @@
+/*
+
+   Contains code for the purpose of debugging.
+
+*/
+
+// DEBUG:
+#define kActionEcho 1004
+
+int _pt_message[ 200 ];
+
+function void ProphetDoEcho( void ) {
+   PtParcel_Open();
+
+   int value = 0;
+   int i = 0;
+   bool done = false;
+
+   while ( ! done ) {
+      int type = PtParcel_ReadNextInt();
+      if ( type == VALUE_NONE ) {
+         break;
+      }
+
+      // Integer.
+      if ( type == 0 ) {
+         int k = 0;
+         while ( k < 4 ) {
+            int byte = PtParcel_ReadNextByte();
+            value |= byte;
+            ++k;
+
+            if ( k % 4 == 0 ) {
+               log( s : "Integer: ", i : value );
+               value = 0;
+            }
+            else {
+               value <<= 8;
+            }
+         }
+      }
+      else {
+         int length = PtParcel_ReadNextInt();
+         while ( i < length ) {
+            _pt_message[ i ] = PtParcel_ReadNextByte();
+            if ( _pt_message[ i ] == VALUE_NONE || i >= 200 ) {
+               done = true;
+            }
+
+            ++i;
+         }
+
+         _pt_message[ i ] = 0;
+         log( s : "Message: ", a : _pt_message );
+         log( s : "Size: ", i : i );
+      }
+   }
+}
+
+int bit_pattern[ 32 + 1 + 3 ];
+
+function void PrintBinary( int value ) {
+   int p = 0;
+   int i = 34;
+
+   while ( i >= 0 ) {
+      if ( p % 8 == 0 && p && i ) {
+         bit_pattern[ i ] = ' ';
+      --i;
+      }
+
+      bit_pattern[ i ] = '0' + ( value & 0x1 );
+      value >>= 1;
+      --i;
+      ++p;
+   }
+
+   bit_pattern[ 35 ] = 0;
+   printBold( a : bit_pattern );
+}
